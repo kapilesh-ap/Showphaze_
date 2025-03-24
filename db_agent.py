@@ -15,7 +15,7 @@ load_dotenv()
 config_list = [
     {
         'model': os.getenv('LLM_MODEL'),
-        'api_key': "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"
+        'api_key': os.getenv('LLM_API_KEY')
     }
 ]
  

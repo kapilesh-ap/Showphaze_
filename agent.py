@@ -15,7 +15,7 @@ from autogen.agentchat.contrib.retrieve_user_proxy_agent import RetrieveUserProx
 # Load environment variables
 load_dotenv()
 
-# Configuration for the OpenAI model
+# Configuration for the OpenAI modelF
 config_list = [
     {
         'model': os.getenv('LLM_MODEL'),
