@@ -1,0 +1,31 @@
+# API and Web Framework
+fastapi>=0.104.0
+uvicorn>=0.23.2
+jinja2>=3.1.2
+python-multipart>=0.0.6
+
+# CORS handling
+starlette>=0.27.0
+
+# AI and LLM Libraries
+openai>=1.3.0
+autogen>=0.2.0
+
+# Data processing and storage
+pandas>=2.1.0
+chromadb>=0.4.13
+pydantic>=2.4.2
+
+# Environment and Utilities
+python-dotenv>=1.0.0
+aiohttp>=3.8.5
+requests>=2.31.0
+
+# Date/Time handling
+pytz>=2023.3
+
+# Optional but useful
+tqdm>=4.66.1
+numpy>=1.24.0
+fuzzywuzzy>=0.18.0
+python-Levenshtein>=0.21.1  # For better performance with fuzzywuzzy
