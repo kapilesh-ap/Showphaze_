@@ -15,7 +15,7 @@ load_dotenv()
 config_list = [
     {
         'model': os.getenv('LLM_MODEL'),
-        'api_key': os.getenv('LLM_API_KEY')
+        'api_key': "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"
     }
 ]
  
@@ -76,29 +76,36 @@ llm_config = {
         }
     ]
 }
- 
-# Function to extract JSON response from chat history
+
+
 async def extract_json_response(agent):
-    """Extracts JSON response from agent's chat history."""
+    """Extracts and returns a cleaned JSON array from agent's chat history by removing items with empty 'positionId'."""
     json_response = None
-    for msg in agent.chat_messages.values():
-        for m in msg:
+
+    for msg_list in agent.chat_messages.values():
+        for m in msg_list:
             content = m.get("content", "")
             try:
-                if content.startswith("[") and content.endswith("]"):
-                    json_response = json.loads(content)
-                    return json_response
-                # Also check for JSON arrays within message content
-                elif "[" in content and "]" in content:
+                # Look for JSON array in the message content
+                if "[" in content and "]" in content:
                     start = content.find("[")
                     end = content.rfind("]") + 1
                     potential_json = content[start:end]
-                    json_response = json.loads(potential_json)
-                    return json_response
+                    parsed_json = json.loads(potential_json)
+
+                    # Ensure it's a list of dicts
+                    if isinstance(parsed_json, list) and all(isinstance(item, dict) for item in parsed_json):
+                        # Filter out items where positionId is an empty string
+                        cleaned = [item for item in parsed_json if item.get("positionId") != ""]
+
+                        # Only set response if the result is valid
+                        if cleaned:
+                            json_response = cleaned
             except Exception:
                 continue
-    return None
- 
+
+    return json_response
+
  
 async def fetch_position_by_name(position_name: Union[str, List[str]]) -> str:
     """Fetches multiple positions from Showphaze API with fuzzy logic matching."""
@@ -183,12 +190,12 @@ async def create_formatted_position_jsons(
     start_dates = [start_date] * len(position_names) if isinstance(start_date, str) else start_date
     quantities = [quantity] * len(position_names) if isinstance(quantity, int) else quantity
     total_entries = sum(quantities)
-    # Ensure timeIn and timeOut are always lists
-    if isinstance(timeIn, str):
-        timeIn = [timeIn] * len(position_name)
-    if isinstance(timeOut, str):
-        timeOut = [timeOut] * len(position_name)
-    # Make sure lists match total_entries
+    # Ensure timeIn and timeOut have defaults if empty
+    if not timeIn or len(timeIn) < len(position_names):
+        timeIn = [""] * len(position_names)
+    if not timeOut or len(timeOut) < len(position_names):
+        timeOut = [""] * len(position_names)
+
 
 
     def expand(val, name):
@@ -214,9 +221,16 @@ async def create_formatted_position_jsons(
             param_lists[key] = [val[min(i, len(val) - 1)] for i in range(total_entries)]
 
 
-    # Extract time part from ISO if full datetime was passed
-    param_lists["timeIn"] = [parser.parse(t).strftime("%H:%M:%S") if t else "" for t in param_lists["timeIn"]]
-    param_lists["timeOut"] = [parser.parse(t).strftime("%H:%M:%S") if t else "" for t in param_lists["timeOut"]]
+       # ⛏️ FIX: Expand timeIn and timeOut correctly per quantity
+    expanded_timeIn = []
+    expanded_timeOut = []
+
+    for i, qty in enumerate(quantities):
+        expanded_timeIn += [timeIn[i]] * qty
+        expanded_timeOut += [timeOut[i]] * qty
+
+    param_lists["timeIn"] = [parser.parse(t).strftime("%H:%M:%S") if t else "" for t in expanded_timeIn]
+    param_lists["timeOut"] = [parser.parse(t).strftime("%H:%M:%S") if t else "" for t in expanded_timeOut]
 
 
     # Fetch metadata
@@ -321,9 +335,21 @@ Follow these steps precisely:
    - Convert all extracted values into proper types: string, boolean, integer, or array.
    - Handle natural language references to date ranges (e.g., “21st and 30th March”) as individual start dates.
 
-6. **Function usage:**
-   - Always call the `create_formatted_position_jsons` function with the extracted structured data.
-   - Do not send unnecessary empty strings or default placeholders when data is already expected to come from the API.
+6. **Function Output Handling:**
+  After calling `create_formatted_position_jsons`, return its full response **exactly as it is** — do not summarize or reformat the output.
+Do not truncate 
+for example if my create_formatted_position_jsons response is :
+
+[{"positionId": "66618f3c1aa7cc77fd983ed5", "positionName": "waiter ", "startDate": "2023-11-30", "timeIn": "2023-11-30T09:00:00", "timeOut": "2023-11-30T17:00:00", "tbd": false, "numberOfHours": "", "quantity": 1, "overNightShift": false, "selectOption": "NA", "additionalComments": "", "attire": "Show Blacks", "complexity": "low", "position_description": "Responsible to serve food to Guest", "position_brief": "Responsible to serve food to Guest", "equipment_required": ["Uniform", "utensils ", "tray", "catering"], "tag": ["Waiter", "waitress"], "default_rate": 22, "contractor_rate": 16}, {"positionId": "66618f3c1aa7cc77fd983ed5", "positionName": "waiter ", "startDate": "2023-11-30", "timeIn": "2023-11-30T09:00:00", "timeOut": "2023-11-30T17:00:00", "tbd": false, "numberOfHours": "", "quantity": 1, "overNightShift": false, "selectOption": "NA", "additionalComments": "", "attire": "Show Blacks", "complexity": "low", "position_description": "Responsible to serve food to Guest", "position_brief": "Responsible to serve food to Guest", "equipment_required": ["Uniform", "utensils ", "tray", "catering"], "tag": ["Waiter", "waitress"], "default_rate": 22, "contractor_rate": 16}, {"positionId": "66618f3c1aa7cc77fd983ed5", "positionName": "waiter ", "startDate": "2023-11-30", "timeIn": "2023-11-30T09:00:00", "timeOut": "2023-11-30T17:00:00", "tbd": false, "numberOfHours": "", "quantity": 1, "overNightShift": false, "selectOption": "NA", "additionalComments": "", "attire": "Show Blacks", "complexity": "low", "position_description": "Responsible to serve food to Guest", "position_brief": "Responsible to serve food to Guest", "equipment_required": ["Uniform", "utensils ", "tray", "catering"], "tag": ["Waiter", "waitress"], "default_rate": 22, "contractor_rate": 16}, {"positionId": "", "positionName": "", "startDate": "2023-11-30", "timeIn": "2023-11-30T09:00:00", "timeOut": "2023-11-30T17:00:00", "tbd": false, "numberOfHours": "", "quantity": 1, "overNightShift": false, "selectOption": "NA", "additionalComments": "", "attire": "Show Blacks", "complexity": "low", "position_description": "", "position_brief": "", "equipment_required": [], "tag": [], "default_rate": 25, "contractor_rate": 20}]
+
+then the output should also be the above and not get truncated like this :
+ [{'Id': '66618f3c1aa7cc77fd983ed5', 'positionName': 'waiter ', 'positionDescription': 'Responsible to serve food to Guest', 'positionBrief': 'Responsible to serve food to Guest', 'equipmentRequired': ['Uniform', 'utensils ', 'tray', 'catering'], 'tag': ['Waiter', 'waitress'], 'defaultRate': 22, 'contractorRate': 16}]
+
+Do not rephrase or explain anything. Do not format in markdown.
+
+Just return the raw JSON array that comes from the function call.
+
+Immediately return TERMINATE after the response.
 
 ---
 
@@ -364,7 +390,7 @@ Follow these steps precisely:
   "timeOut": "2024-03-26T17:00:00"
 }
 
-
+Give all the data from the function call even if the key are same.
 Return TERMINATE when the function call is complete. Do not Give auto replies. After the function call is complete, return TERMINATE.
 
     """
@@ -396,6 +422,7 @@ async def run_agents(task):
  
     if json_data:
         print("\nExtracted JSON Response:")
+        print(json_data)
         return json_data
     else:
         print("No JSON response found")

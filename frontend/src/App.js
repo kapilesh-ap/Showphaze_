@@ -1,84 +1,321 @@
 import React, { useState, useEffect } from "react";
 import axios from "axios";
 import { FaSearch, FaCalendarAlt, FaMapMarkerAlt, FaClock, 
-  FaTimes, FaUser, FaChevronDown, FaFilter, FaThList, FaTable } from "react-icons/fa";
-  import "./App.css";
+  FaTimes, FaUser, FaChevronDown, FaFilter, FaThList, FaTable, FaPlus,FaTrash } from "react-icons/fa";
+import "./App.css";
 
-const EventBookingApp = () => {
-  // States
-  const [query, setQuery] = useState("");
-  const [response, setResponse] = useState("");
-  const [loading, setLoading] = useState(false);
-  const [events, setEvents] = useState([]);
-  const [showFilters, setShowFilters] = useState(false);
-  const [activeView, setActiveView] = useState("grid");
-  const [selectedEvent, setSelectedEvent] = useState(null);
-  const [filters, setFilters] = useState({
-    date: "",
-    position: "",
-    hours: ""
-  });
-  const [originalData, setOriginalData] = useState([]);
+import { parseISO, format,isValid  } from 'date-fns';
 
-  // Handle query
-  const handleQuery = async () => {
-    setLoading(true);
-    try {
-      const res = await axios.post("http://localhost:8000/query", { query });
-      setResponse(res.data.data);
-      
-      // Simulate fetching events based on query
-      fetchEvents(query);
-    } catch (error) {
-      setResponse("Error fetching data.");
-    }
-    setLoading(false);
-  };
+const formatDate = (dateString) => {
+  if (!dateString) return "-";
 
-  const fetchEvents = async (searchTerm) => {
-    try {
-        // Fetch positions related to the search term
-        const res = await axios.post("http://localhost:8000/get_event_details", { 
-            query: `Fetch all positions related to "${searchTerm}"` 
+  const parsedDate = parseISO(dateString);
+
+  if (!isValid(parsedDate)) return "Invalid Date";
+
+  return format(parsedDate, "EEEE, MMMM d, yyyy"); // Example: Monday, January 27, 2025
+};
+
+const formatLabel = (str) =>
+  str
+    .replace(/([A-Z])/g, ' $1')
+    .replace(/^./, (s) => s.toUpperCase());
+
+
+    const EventBookingApp = () => {
+      // States
+      const [query, setQuery] = useState("");
+      const [response, setResponse] = useState("");
+      const [loading, setLoading] = useState(false);
+      const [events, setEvents] = useState([]);
+      const [showFilters, setShowFilters] = useState(false);
+      const [editableCards, setEditableCards] = useState([]);
+      const [editableCardColumns, setEditableCardColumns] = useState(new Set());
+      const [newColumnInput, setNewColumnInput] = useState("");
+      const [activeView, setActiveView] = useState("grid");
+      const [selectedEvent, setSelectedEvent] = useState(null);
+      const [filters, setFilters] = useState({
+        date: "",
+        position: "",
+        hours: ""
+      });
+      const [originalData, setOriginalData] = useState([]);
+    
+      // Handle query
+const handleQuery = async () => {
+        // Reset ALL states to their initial values
+        setLoading(true);
+        setResponse("");
+        setEvents([]);
+        setShowFilters(false);
+        setEditableCards([]);
+        setEditableCardColumns(new Set());
+        setNewColumnInput("");
+        setActiveView("grid");
+        setSelectedEvent(null);
+        setFilters({
+          date: "",
+          position: "",
+          hours: ""
         });
+        setOriginalData([]);
+    
+        try {
 
-        console.log("API Response:", res.data);
+          const res = await axios.post("http://localhost:8000/query", { query });
+          
+          console.log("API Response:", res.data.data);
+          setResponse(res.data.data);
+    
+          // Create editable cards
+          const newEditableCards = [];
+          const newColumns = new Set();
+    
+          // Determine number of cards and collect all unique keys
+          const count = Array.isArray(res.data.data.positionName) 
+            ? res.data.data.positionName.length 
+            : Object.keys(res.data.data.quantity || {}).length;
+          
+          for (let i = 0; i < count; i++) {
+            const card = {};
+            Object.entries(res.data.data).forEach(([key, val]) => {
+              // Collect all keys
+              newColumns.add(key);
+    
+              // Populate card data
+              if (Array.isArray(val)) card[key] = val[i];
+              else if (typeof val === "object" && val !== null) {
+                card[key] = val[Object.keys(val)[i]];
+              } else {
+                card[key] = val;
+              }
+            });
+            newEditableCards.push(card);
+          }
+    
+          // Set states with new data
+          setEditableCards(newEditableCards);
+          setEditableCardColumns(newColumns);
+          setOriginalData(res.data.data);
+          
+          // Fetch events based on query
+          await fetchEvents(query);
+        } catch (error) {
+          console.error("Error in handleQuery:", error);
+          setResponse("Error fetching data.");
+          
+          // Reset all states in case of error
+          setEditableCards([]);
+          setEditableCardColumns(new Set());
+          setEvents([]);
+        } finally {
+          setLoading(false);
+        }
+      };
+    
+      // Add new position card
+const addNewPositionCard = () => {
+        const newCard = {};
+        editableCardColumns.forEach(column => {
+          newCard[column] = '';
+        });
+        setEditableCards([...editableCards, newCard]);
+      };
+    
+// Add new column
 
-        // Store the original data for table view
-        if (res.data && res.data.data) {
-            setOriginalData(res.data.data);
-            
-            // Map the data for grid/list views
-            const formattedEvents = res.data.data.map(event => ({
-                Id: event.positionId,
-                positionName: event.positionName,
-                startDate: event.startDate,
-                timeIn: event.timeIn,
-                timeOut: event.timeOut,
-                location: event.location || "Location not provided",
-                quantity: event.quantity,
-                image: `/images/${event.positionName?.toLowerCase()}.jpg` || "/images/default.jpg",
-                positionDescription: event.additionalComments && event.additionalComments.length > 0 
-                    ? event.additionalComments 
-                    : `${event.positionName} position - ${event.numberOfHours} hour shift.`,
-                attire: event.attire || "Not specified",
-                defaultRate: "15.00", // Default placeholder rate
-                contractorRate: "18.00", // Default placeholder rate
-                numberOfHours: event.numberOfHours,
-                complexity: event.complexity
-            }));
-            setEvents(formattedEvents);
-        } else {
-            console.warn("No positions found for the given search term.");
+// Add new column
+const addNewColumn = () => {
+  if (!newColumnInput) return;
+
+// Sanitize column name
+const sanitizedColumnName = newColumnInput
+  .trim()
+  .replace(/[^a-zA-Z0-9]/g, '')
+  .replace(/^./, char => char.toLowerCase());
+
+  // Validate column name
+  if (!sanitizedColumnName) {
+    alert("Invalid column name. Please use alphanumeric characters.");
+    setNewColumnInput("");
+    return;
+  }
+
+  // Check if column already exists
+  if (editableCardColumns.has(sanitizedColumnName)) {
+    alert(`Column "${sanitizedColumnName}" already exists.`);
+    setNewColumnInput("");
+    return;
+  }
+
+  // Update columns for all existing cards
+  const updatedColumns = new Set(editableCardColumns);
+  updatedColumns.add(sanitizedColumnName);
+  setEditableCardColumns(updatedColumns);
+
+  // Add the new column to existing cards
+  const updatedCards = editableCards.map(card => ({
+    ...card,
+    [sanitizedColumnName]: ''
+  }));
+  setEditableCards(updatedCards);
+
+  // Clear the input
+  setNewColumnInput("");
+  };
+    
+      // Remove a column
+const removeColumn = (columnToRemove) => {
+        // Update columns
+        const updatedColumns = new Set(editableCardColumns);
+        updatedColumns.delete(columnToRemove);
+        setEditableCardColumns(updatedColumns);
+    
+        // Remove column from all cards
+        const updatedCards = editableCards.map(card => {
+          const { [columnToRemove]: removedColumn, ...rest } = card;
+          return rest;
+        });
+        setEditableCards(updatedCards);
+      };
+  
+const processResponse = async (apiResponse, transcription) => {
+        // Reset ALL states to their initial values
+        setLoading(true);
+        setResponse("");
+        setEvents([]);
+        setShowFilters(false);
+        setEditableCards([]);
+        setEditableCardColumns(new Set());
+        setNewColumnInput("");
+        setActiveView("grid");
+        setSelectedEvent(null);
+        setFilters({
+          date: "",
+          position: "",
+          hours: ""
+        });
+        setOriginalData([]);
+      
+        try {
+          // Wrap response under `.data` if missing
+          const wrappedData = apiResponse?.data ?? apiResponse;
+          if (wrappedData.position_name) {
+            wrappedData.positionName = wrappedData.position_name;
+            delete wrappedData.position_name;
+          }
+      
+          console.log("API Response:", wrappedData);
+          setResponse(wrappedData);
+      
+          // Create editable cards
+          const newEditableCards = [];
+          const newColumns = new Set();
+      
+          // Determine number of cards and collect all unique keys
+          const count = Array.isArray(wrappedData.positionName)
+            ? wrappedData.positionName.length
+            : Object.keys(wrappedData.quantity || {}).length;
+          console.log(count)
+          for (let i = 0; i < count; i++) {
+            const card = {};
+            Object.entries(wrappedData).forEach(([key, val]) => {
+              // Collect all keys
+              newColumns.add(key);
+      
+              // Populate card data
+              if (Array.isArray(val)) card[key] = val[i];
+              else if (typeof val === "object" && val !== null) {
+                card[key] = val[Object.keys(val)[i]];
+              } else {
+                card[key] = val;
+              }
+            });
+            newEditableCards.push(card);
+          }
+      
+          // Set states with new data
+          setEditableCards(newEditableCards);
+          setEditableCardColumns(newColumns);
+          setOriginalData(wrappedData);
+      
+          // Fetch events based on the transcription (voice query)
+          await fetchEvents(transcription);
+        } catch (error) {
+          console.error("Error in processResponse:", error);
+          setResponse("Error fetching data.");
+      
+          // Reset all states in case of error
+          setEditableCards([]);
+          setEditableCardColumns(new Set());
+          setEvents([]);
+        } finally {
+          setLoading(false);
+        }
+      };
+      
+      
+
+      const fetchEvents = async (searchTerm) => {
+        try {
+          const res = await axios.post("http://localhost:8000/get_event_details", {
+            query: `Fetch all positions related to "${searchTerm}"`
+          });
+      
+          console.log("API Response:", res.data);
+      
+          if (
+            res.data &&
+            Array.isArray(res.data.data) &&
+            res.data.data.length === 1 &&
+            res.data.data[0].error
+          ) {
+            // If there's an error message like "No match found"
+            setResponse(res.data.data[0].error);
             setEvents([]);
             setOriginalData([]);
+            return; // stop further processing
+          }
+      
+          if (res.data && res.data.data && res.data.data.length > 0) {
+            setOriginalData(res.data.data);
+      
+            const formattedEvents = res.data.data.map((event, idx) => ({
+              Id: event.positionId || idx,
+              positionName: event.positionName || "Unknown Position",
+              startDate: event.startDate,
+              timeIn: event.timeIn,
+              timeOut: event.timeOut,
+              location: event.location || "Location not provided",
+              quantity: event.quantity || 0,
+              
+              positionDescription:
+                event.additionalComments && event.additionalComments.length > 0
+                  ? event.additionalComments
+                  : `${event.positionName || "Position"} - ${
+                      event.numberOfHours || "N/A"
+                    } hour shift.`,
+              attire: event.attire || "Not specified",
+              defaultRate: "15.00",
+              contractorRate: "18.00",
+              numberOfHours: event.numberOfHours,
+              complexity: event.complexity
+            }));
+      
+            setEvents(formattedEvents);
+          } else {
+            setResponse("No data available.");
+            setEvents([]);
+            setOriginalData([]);
+          }
+        } catch (error) {
+          console.error("Error fetching positions:", error);
+          setResponse("Failed to fetch events.");
+          setEvents([]);
+          setOriginalData([]);
         }
-        
-    } catch (error) {
-        console.error("Error fetching positions:", error);
-    }
-  };
-
+      };
+      
   // Get table headers dynamically from the first object's keys
   const getTableHeaders = () => {
     if (originalData.length === 0) return [];
@@ -120,12 +357,6 @@ const EventBookingApp = () => {
     setSelectedEvent(null);
   };
 
-  // Format date to human-readable
-  const formatDate = (dateString) => {
-    const options = { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' };
-    return new Date(dateString).toLocaleDateString(undefined, options);
-  };
-
   // Format time to human-readable
   const formatTime = (timeString) => {
     return new Date(timeString).toLocaleTimeString(undefined, { 
@@ -133,6 +364,60 @@ const EventBookingApp = () => {
       minute: '2-digit' 
     });
   };
+
+
+  const [recording, setRecording] = useState(false);
+const [mediaRecorder, setMediaRecorder] = useState(null);
+const [audioChunks, setAudioChunks] = useState([]);
+
+const startRecording = async () => {
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    const recorder = new MediaRecorder(stream);
+    setMediaRecorder(recorder);
+    setRecording(true);
+
+    const chunks = [];
+    recorder.ondataavailable = (e) => chunks.push(e.data);
+    recorder.onstop = async () => {
+      const blob = new Blob(chunks, { type: "audio/webm" });
+
+      // Prepare form data
+      const formData = new FormData();
+      formData.append("file", blob, "voice_input.webm");
+
+      try {
+        const res = await fetch("http://localhost:8000/voice-command", {
+          method: "POST",
+          body: formData,
+        });
+
+        const result = await res.json();
+        const { transcription, response } = result;
+
+          setQuery(transcription);
+          processResponse(response, transcription); // ✅ now passing transcription too
+
+
+      } catch (error) {
+        console.error("Upload failed", error);
+      }
+    };
+
+    setAudioChunks(chunks);
+    recorder.start();
+  } catch (error) {
+    console.error("Microphone error", error);
+  }
+};
+
+const stopRecording = () => {
+  if (mediaRecorder) {
+    mediaRecorder.stop();
+    setRecording(false);
+  }
+};
+
 
   return (
     <div className="app-container">
@@ -178,12 +463,137 @@ const EventBookingApp = () => {
                 Search
               </button>
             </div>
+            <div style={{ margin: "1rem 0" }}>
+            <div className="voice-command-container">
+              <button 
+                onClick={recording ? stopRecording : startRecording} 
+                className={`record-button ${recording ? 'recording' : ''}`}
+              >
+                {recording ? "🛑 Stop Listening" : "🎙️ Speak Your Request"}
+              </button>
+            </div>
+
+          </div>
+          {recording && (
+            <div className="waveform-animation">
+              {[...Array(20)].map((_, i) => (
+                <span key={i} className="bar" style={{ animationDelay: `${i * 0.1}s` }}></span>
+              ))}
+            </div>
+          )}
+
+
+
             
-            {response && !loading && (
-              <div className="response-box">
-                <p>{response}</p>
-              </div>
-            )}
+      {!loading && response && typeof response === 'object' && response.positionName && editableCards.length > 0 ? (
+        <div className="scorecards-container">
+          {editableCards.map((card, index) => (
+            <div className="scorecard" key={`edit-${index}`}>
+              {Array.from(editableCardColumns).map((key) => (
+                <div key={`${key}-${index}`} className="scorecard-column-wrapper" style={{ marginBottom: '0.5rem' }}>
+                  <label className="scorecard-column-label" style={{ fontWeight: 600, display: 'block' }}>
+                    {formatLabel(key)}
+                    <button 
+                      onClick={() => removeColumn(key)}
+                      className="remove-column-btn"
+                      title="Remove Column"
+                    >
+                      <FaTrash />
+                    </button>
+                  </label>
+                  <input
+                    type="text"
+                    value={card[key] || ''}
+                    onChange={(e) => {
+                      const updatedCards = [...editableCards];
+                      updatedCards[index][key] = e.target.value;
+                      setEditableCards(updatedCards);
+                    }}
+                    style={{
+                      width: "100%",
+                      padding: "0.4rem",
+                      borderRadius: "8px",
+                      border: "1px solid #ccc",
+                      background: "#1e2131",
+                      color: "white"
+                    }}
+                  />
+                </div>
+              ))}
+
+              <button
+                className="scorecard-save-button"
+                onClick={() => {
+                  const newQuery = editableCards
+                    .flatMap((card, cardIndex) =>
+                      Object.entries(card).map(
+                        ([k, v]) => `${formatLabel(k)} (Card ${cardIndex + 1}): ${v}`
+                      )
+                    )
+                    .join(", ");
+                  
+                  setQuery(newQuery);
+                  handleQuery(); // Resend the updated request
+                }}
+              >
+                Send Again
+              </button>
+            </div>
+          ))}
+
+          {/* Add Column / Add Position actions */}
+          <div className="scorecard-actions">
+            <div className="new-column-input-wrapper" style={{ marginBottom: '1rem' }}>
+              <input 
+                type="text"
+                value={newColumnInput}
+                onChange={(e) => setNewColumnInput(e.target.value)}
+                placeholder="Enter new column name"
+                className="new-column-input"
+                style={{
+                  padding: "0.4rem",
+                  borderRadius: "8px",
+                  border: "1px solid #ccc",
+                  marginRight: "0.5rem",
+                  background: "#1e2131",
+                  color: "white"
+                }}
+              />
+              <button 
+                onClick={addNewColumn} 
+                className="add-column-button"
+                disabled={!newColumnInput}
+              >
+                <FaPlus /> Add Column
+              </button>
+            </div>
+
+            <button 
+              onClick={() => {
+                const newCard = {};
+                editableCardColumns.forEach(column => {
+                  newCard[column] = '';
+                });
+                setEditableCards([...editableCards, newCard]);
+              }} 
+              className="add-position-button"
+            >
+              <FaPlus /> Add Position
+            </button>
+          </div>
+        </div>
+      ) : (
+        response && !loading && (
+          <div className="response-box">
+            <p>
+              {typeof response === 'string'
+                ? response
+                : response[0]?.error || 'No results found.'}
+            </p>
+          </div>
+        )
+      )}
+
           </div>
           
           <div className="events-controls">
@@ -329,7 +739,7 @@ const EventBookingApp = () => {
                     >
                       {activeView === "grid" ? (
                         <>
-                          <img src={event.image} alt={event.positionName} className="event-image" />
+                          
                           <div className="event-details">
                             <h4 className="event-title">{event.positionName}</h4>
                             <p>{event.positionDescription || "No description available."}</p>
